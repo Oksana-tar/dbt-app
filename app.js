@@ -3,7 +3,7 @@
 (() => {
 "use strict";
 const D = window.DBT_DATA;
-const TOTAL = 24;
+const TOTAL = Object.keys(D.sessions).length; // число сессий берётся из data.js
 
 // ---------- Утилиты ----------
 const $ = s => document.querySelector(s);
@@ -206,7 +206,7 @@ function viewToday() {
     <h1>${esc(s.t)}</h1>
     <span class="read">${beforeStart ? "Первая встреча" : "Встреча"}: ${longDate(sessDate(CURRENT))}</span>
     ${next && next !== CURRENT ? `<span class="read">Следующая: ${longDate(sessDate(next))}${isMoved(next) ? " (перенесена)" : ""}</span>` : ""}
-    <span class="read">Читаем: Ван Дейк, ${esc(s.read)}</span>
+    ${s.read ? `<span class="read">Читаем: Ван Дейк, ${esc(s.read)}</span>` : ""}
     <div class="bar" role="progressbar" aria-label="Пройдено сессий" aria-valuemin="0" aria-valuemax="${TOTAL}" aria-valuenow="${CURRENT}"><i style="width:${CURRENT / TOTAL * 100}%"></i></div>
   </div>
   ${chainIsNew() ? chainCard() : ""}
@@ -233,7 +233,7 @@ function viewToday() {
     ${item("diary", "Заполнял дневник", `хотя бы ${DIARY_DAYS_FOR_MARK} дня из 7 · сейчас ${diaryDaysInWeek(CURRENT)}`)}
     ${item("hw", "Сделал задание недели", s.task.title)}
     ${chainOn() ? item("chain", "Разобрал цепочку", "анализ поведенческой цепочки") : ""}
-    ${item("read", "Прочитал главу", `Ван Дейк, ${s.read}`)}
+    ${s.read ? item("read", "Прочитал главу", `Ван Дейк, ${s.read}`) : ""}
     <p class="muted">В этой версии отметки никуда не отправляются. Покажите их ведущему на встрече.</p>
     ${privacy("Ведущий увидит только эти галочки. Ответы, практики и дневник остаются на вашем телефоне.")}
   </section>
@@ -274,7 +274,7 @@ function viewPractice() {
 
 function viewPlan() {
   return `${storageAlert()}<h1>План тренинга</h1>
-  <p class="muted">24 сессии, ${esc(D.group.name)}. Нажмите на сессию, чтобы увидеть чтение, вопрос и задание.</p>` +
+  <p class="muted">${TOTAL} ${TOTAL % 10 === 1 && TOTAL % 100 !== 11 ? "сессия" : [2, 3, 4].includes(TOTAL % 10) && ![12, 13, 14].includes(TOTAL % 100) ? "сессии" : "сессий"}, ${esc(D.group.name)}. Нажмите на сессию, чтобы увидеть чтение, вопрос и задание.</p>` +
   D.modules.map(m => {
     let rows = "";
     for (let i = m.from; i <= m.to; i++) {
@@ -286,7 +286,7 @@ function viewPlan() {
           ${i === CURRENT ? ` <span class="badge now">сейчас</span>` : ""}${isMoved(i) ? ` <span class="badge">перенесена</span>` : ""}
           <br><span>${esc(s.t)}</span>
           <span class="more">
-            <span><b>Читаем:</b> Ван Дейк, ${esc(s.read)}</span>
+            ${s.read ? `<span><b>Читаем:</b> Ван Дейк, ${esc(s.read)}</span>` : ""}
             <span><b>Вопрос:</b> ${esc(s.q)}</span>
             <span><b>Задание:</b> ${esc(s.task.title)}</span>
             ${S.answers[i] ? `<span><b>Мой ответ:</b> ${esc(S.answers[i])}</span>` : ""}
@@ -595,7 +595,7 @@ function viewGroup() {
     <p class="muted codes">Материалы пособия: <b>${esc(s.codes)}</b></p>
     <p class="muted">Задание участникам: ${esc(s.task.title)}</p>
     <p class="muted">Вопрос недели: ${esc(s.q)}</p>
-    <p class="muted">Чтение: Ван Дейк, ${esc(s.read)}</p>
+    <p class="muted">Чтение: ${s.read ? `Ван Дейк, ${esc(s.read)}` : "на этой неделе не читаем"}</p>
   </section>
   <section class="card">
     <h2>Отметки участников</h2>
@@ -603,7 +603,7 @@ function viewGroup() {
   </section>
   <section class="card">
     <h2>Расписание</h2>
-    <p class="muted">${next ? `Следующая встреча: <b>сессия ${next}, ${longDate(sessDate(next))}</b>` : "Все 24 встречи прошли."}</p>
+    <p class="muted">${next ? `Следующая встреча: <b>сессия ${next}, ${longDate(sessDate(next))}</b>` : `Все ${TOTAL} встреч прошли.`}</p>
     ${moves.length ? `<div class="entry"><span class="eyebrow">Переносы</span>${moves.map(n => `<span>Сессия ${n} перенесена на ${longDate(sessDate(n))}</span>`).join("")}</div>` : ""}
     <p class="muted">Чтобы перенести встречу, напишите разработчику приложения: какую сессию, новую дату и время. Все следующие встречи сдвинутся и пойдут раз в неделю от новой даты. Участники увидят новое расписание при следующем открытии приложения с интернетом.</p>
   </section>

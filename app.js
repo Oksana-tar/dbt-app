@@ -213,6 +213,7 @@ function viewToday() {
     ${privacy("Ведущий увидит только эти галочки. Ответы, практики и дневник остаются на вашем телефоне.")}
   </section>
   ${backupCard()}
+  ${isLeader() ? "" : `<button class="linkbtn" id="leader-on">Я ведущий или координатор</button>`}
   ${TEST_NOW ? `<p class="muted">Проверочный режим: сегодня считается ${shortDate(TEST_NOW)} ${TEST_NOW.getFullYear()}.</p>` : ""}`;
 }
 
@@ -545,7 +546,50 @@ function scrollGridToCurrent() {
   if (th) gw.scrollLeft = Math.max(0, th.offsetLeft - 122 - 3 * 31);
 }
 
-const soon = (title, text) => `<h1>${title}</h1><section class="card"><p>${text}</p><p class="muted">Этот раздел появится в следующей сборке приложения.</p></section>`;
+// ---------- Группа (ведущий и координатор) ----------
+const isLeader = () => !!(S.meta && S.meta.role === "leader");
+
+function viewGroup() {
+  const s = D.sessions[CURRENT], next = nextMeeting();
+  const moves = Object.keys(D.moves || {}).map(Number).sort((a, b) => a - b);
+  const rows = [];
+  for (let n = 1; n <= TOTAL; n++) {
+    const st = n < CURRENT ? "past" : n === CURRENT ? "cur" : "";
+    const d = sessDate(n);
+    rows.push(`<span class="n ${st}">${n}</span><span class="${st}">${shortDate(d)}, ${hm(d)}${isMoved(n) ? " · перенесена" : ""}<br><span class="muted">${esc(D.sessions[n].t)} · <span class="codes">${esc(D.sessions[n].codes)}</span></span></span>`);
+  }
+  return `${storageAlert()}<span class="eyebrow">Для ведущего и координатора</span>
+  <h1>${esc(D.group.name)}</h1>
+  <section class="card">
+    <span class="eyebrow">Сессия ${CURRENT} из ${TOTAL} · ${esc(moduleOf(CURRENT))}</span>
+    <h2>${esc(s.t)}</h2>
+    <p class="muted codes">Материалы пособия: <b>${esc(s.codes)}</b></p>
+    <p class="muted">Задание участникам: ${esc(s.task.title)}</p>
+    <p class="muted">Вопрос недели: ${esc(s.q)}</p>
+    <p class="muted">Чтение: Ван Дейк, ${esc(s.read)}</p>
+  </section>
+  <section class="card">
+    <h2>Отметки участников</h2>
+    <p class="muted">В этой версии отметки никуда не отправляются: участники показывают их на встрече. Сводка по участникам появится здесь, когда подключим сервер отметок (шаг 4 в ТЗ).</p>
+  </section>
+  <section class="card">
+    <h2>Расписание</h2>
+    <p class="muted">${next ? `Следующая встреча: <b>сессия ${next}, ${longDate(sessDate(next))}</b>` : "Все 24 встречи прошли."}</p>
+    ${moves.length ? `<div class="entry"><span class="eyebrow">Переносы</span>${moves.map(n => `<span>Сессия ${n} перенесена на ${longDate(sessDate(n))}</span>`).join("")}</div>` : ""}
+    <p class="muted">Чтобы перенести встречу, напишите разработчику приложения: какую сессию, новую дату и время. Все следующие встречи сдвинутся и пойдут раз в неделю от новой даты. Участники увидят новое расписание при следующем открытии приложения с интернетом.</p>
+  </section>
+  <section class="card">
+    <h2>Разбор цепочки</h2>
+    <p class="muted">${D.chainEnabled ? "<b>Включён:</b> участники видят карточку разбора и четвёртую галочку." : "<b>Выключен.</b> Когда объясните анализ цепочки на группе, напишите разработчику, и его включат для всех участников."}</p>
+  </section>
+  <section class="card">
+    <h2>Все сессии</h2>
+    <div class="sched">${rows.join("")}</div>
+  </section>
+  ${privacy("На этом экране нет личных записей участников. Коды материалов видят только ведущий и координатор.")}
+  <button class="linkbtn" id="leader-off">Выйти из режима ведущего</button>`;
+}
+
 const VIEWS = {
   today: viewToday,
   practice: viewPractice,
@@ -553,17 +597,24 @@ const VIEWS = {
   chain: viewChain,
   diary: viewDiary,
   skills: viewSkills,
-  group: () => soon("Группа", "Раздел для ведущего и координатора: отметки участников, расписание и переносы."),
+  group: viewGroup,
 };
 const NAV_OF = { practice: "today", chain: "today" };
 
 // ---------- Навигация ----------
-const route = () => { const r = location.hash.slice(1); return VIEWS[r] ? r : "today"; };
+const route = () => {
+  const r = location.hash.slice(1);
+  if (r === "group" && !isLeader()) return "today";
+  return VIEWS[r] ? r : "today";
+};
 function render() {
   const r = route();
   $("#app").innerHTML = VIEWS[r]();
   const navTab = NAV_OF[r] || r;
-  document.querySelectorAll("nav button").forEach(b => b.setAttribute("aria-current", b.dataset.tab === navTab ? "page" : "false"));
+  document.querySelectorAll("nav button").forEach(b => {
+    b.setAttribute("aria-current", b.dataset.tab === navTab ? "page" : "false");
+    if (b.dataset.tab === "group") b.hidden = !isLeader();
+  });
 }
 function go(r) {
   if (location.hash.slice(1) === r) { render(); window.scrollTo(0, 0); return; }
@@ -650,6 +701,21 @@ document.addEventListener("click", async e => {
     const h = [...document.querySelectorAll("h2")].find(x => x.textContent.startsWith("Мои практики"));
     if (h) h.scrollIntoView({ behavior: "smooth", block: "start" });
     return;
+  }
+
+  // ----- Режим ведущего -----
+  if (b.id === "leader-on") {
+    const code = prompt("Код ведущего или координатора:");
+    if (code == null) return;
+    if (code.trim() !== String(D.group.leaderCode)) { toast("Код не подошёл"); return; }
+    try { await commit("meta", m => { m.role = "leader"; return m; }); } catch (err) { return saveFailed(err); }
+    toast("Вкладка «Группа» включена");
+    return go("group");
+  }
+  if (b.id === "leader-off") {
+    try { await commit("meta", m => { delete m.role; return m; }); } catch (err) { return saveFailed(err); }
+    toast("Режим ведущего выключен");
+    return go("today");
   }
 
   // ----- Анализ цепочки -----

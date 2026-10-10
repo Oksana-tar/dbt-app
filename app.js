@@ -64,7 +64,8 @@ function nextMeeting() {
 const moduleOf = n => (D.modules.find(m => n >= m.from && n <= m.to) || {}).name || "";
 
 // ---------- Состояние ----------
-const EMPTY = () => ({ answers: {}, practices: {}, marks: {}, drafts: { ans: {}, form: {} } });
+// diary: { "2026-10-10": запись }, grid: { "навык": [недели] }
+const EMPTY = () => ({ answers: {}, practices: {}, marks: {}, diary: {}, grid: {}, drafts: { ans: {}, form: {}, diary: null } });
 let S = EMPTY();
 let loaded = false, storageError = null;
 let CURRENT = calcCurrent();
@@ -74,6 +75,38 @@ const openSess = new Set();
 const emptyForm = () => ({ sit: "", before: 3, steps: [], did: "", after: 2, res: "", note: "" });
 const form = () => (S.drafts.form[CURRENT] = S.drafts.form[CURRENT] || emptyForm());
 const marksOf = n => S.marks[n] || {};
+
+// ---------- Дневник: даты и недели ----------
+const dayKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const dayFromKey = k => parseLocal(k + "T12:00");
+const todayKey = () => dayKey(now());
+const yesterdayKey = () => { const t = now(); return dayKey(new Date(t.getFullYear(), t.getMonth(), t.getDate() - 1)); };
+const dayLabel = k => {
+  const d = dayFromKey(k);
+  try { return d.toLocaleDateString("ru-RU", { weekday: "short", day: "numeric", month: "short" }); }
+  catch (e) { return shortDate(d); }
+};
+// Неделя (номер сессии), к которой относится день: по концу этого дня
+function weekOfDay(k) {
+  const d = dayFromKey(k), end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59);
+  let w = 1;
+  for (let n = 1; n <= TOTAL; n++) if (end >= sessDate(n)) w = n;
+  return w;
+}
+const DIARY_DAYS_FOR_MARK = 4;
+const diaryDaysInWeek = w => Object.values(S.diary).filter(e => e.week === w).length;
+
+const emptyDiary = day => ({ day, em: [], power: 2, sk: [], note: "" });
+const diaryFromEntry = day => {
+  const e = S.diary[day];
+  return e ? { day, em: [...e.em], power: e.power, sk: [...e.sk], note: e.note } : emptyDiary(day);
+};
+// Черновик дневника — только за сегодня или вчера; устаревший начинаем заново
+function diaryDraft() {
+  const dr = S.drafts.diary;
+  if (!dr || (dr.day !== todayKey() && dr.day !== yesterdayKey())) S.drafts.diary = diaryFromEntry(todayKey());
+  return S.drafts.diary;
+}
 
 async function load() {
   try {
@@ -171,7 +204,7 @@ function viewToday() {
   </section>` : ""}
   <section class="card">
     <h2>Мои отметки за неделю</h2>
-    ${item("diary", "Заполнял дневник", "хотя бы 4 дня из 7")}
+    ${item("diary", "Заполнял дневник", `хотя бы ${DIARY_DAYS_FOR_MARK} дня из 7 · сейчас ${diaryDaysInWeek(CURRENT)}`)}
     ${item("hw", "Сделал задание недели", s.task.title)}
     ${D.chainEnabled ? item("chain", "Разобрал цепочку", "анализ поведенческой цепочки") : ""}
     ${item("read", "Прочитал главу", `Ван Дейк, ${s.read}`)}
@@ -236,13 +269,42 @@ function viewPlan() {
   }).join("");
 }
 
+function viewDiary() {
+  const dr = diaryDraft(), exists = !!S.diary[dr.day];
+  const chips = (arr, sel, attr) => arr.map(x => `<button class="chip ${sel.includes(x) ? "on" : ""}" data-${attr}="${esc(x)}" aria-pressed="${sel.includes(x)}">${esc(x)}</button>`).join("");
+  const dayChip = (k, label) => `<button class="chip ${dr.day === k ? "on" : ""}" data-dday="${k}" aria-pressed="${dr.day === k}">${label} · ${esc(dayLabel(k))}</button>`;
+  const entries = Object.keys(S.diary).sort().reverse().map(k => S.diary[k]);
+  const days = diaryDaysInWeek(CURRENT);
+  return `${storageAlert()}<h1>Дневник</h1>
+  ${privacy("Дневник хранится только на этом телефоне. Никто, включая ведущего, его не видит.")}
+  <section class="card">
+    <h2>Запись за день</h2>
+    <div class="chips" role="group" aria-label="За какой день запись">${dayChip(todayKey(), "Сегодня")}${dayChip(yesterdayKey(), "Вчера")}</div>
+    ${exists ? `<p class="muted">Запись за этот день уже есть. Её можно поправить и сохранить заново.</p>` : ""}
+    <label>Какие эмоции были?</label><div class="chips">${chips(D.emotions, dr.em, "em")}</div>
+    <label for="power">Самая сильная эмоция: <span id="power-v">${dr.power}</span> из 5</label>
+    <input type="range" id="power" min="0" max="5" step="1" value="${dr.power}">
+    <div class="scale" aria-hidden="true"><span>0 · спокойно</span><span>5 · буря</span></div>
+    <label>Какие навыки применил?</label><div class="chips">${chips(D.diarySkills, dr.sk, "dsk")}</div>
+    <label for="dnote">Заметка</label><textarea id="dnote" placeholder="Что произошло и что помогло">${esc(dr.note)}</textarea>
+    <button class="btn" id="save-diary">${exists ? "Сохранить изменения" : "Сохранить запись"}</button>
+    <p class="muted">На этой неделе дневник заполнен дней: <b>${days}</b> из 7. Навыки из записи сами отмечаются в таблице навыков.</p>
+  </section>
+  <section class="card"><h2>Прошлые записи</h2>${entries.length ? entries.map(e => `<div class="entry">
+      <span class="eyebrow">${esc(dayLabel(e.day))} · сила ${e.power}/5</span>
+      <span><b>${esc(e.em.join(", ") || "Без отметки эмоций")}</b></span>
+      ${e.sk.length ? `<span class="muted">Навыки: ${esc(e.sk.join(", "))}</span>` : ""}
+      ${e.note ? `<span style="white-space:pre-wrap">${esc(e.note)}</span>` : ""}
+    </div>`).join("") : `<p class="muted">Пока нет записей. Первая появится здесь после сохранения.</p>`}</section>`;
+}
+
 const soon = (title, text) => `<h1>${title}</h1><section class="card"><p>${text}</p><p class="muted">Этот раздел появится в следующей сборке приложения.</p></section>`;
 const VIEWS = {
   today: viewToday,
   practice: viewPractice,
   plan: viewPlan,
   chain: () => soon("Анализ поведенческой цепочки", "Разбор цепочки по восьми шагам."),
-  diary: () => soon("Дневник", "Запись за день: эмоции, их сила, применённые навыки и заметка."),
+  diary: viewDiary,
   skills: () => soon("Навыки", "Ваша таблица навыков по неделям и шпаргалка с расшифровкой аббревиатур."),
   group: () => soon("Группа", "Раздел для ведущего и координатора: отметки участников, расписание и переносы."),
 };
@@ -343,6 +405,45 @@ document.addEventListener("click", async e => {
     return;
   }
 
+  // ----- Дневник -----
+  if (b.dataset.dday) {
+    const dr = diaryDraft(), k = b.dataset.dday;
+    if (dr.day === k) return;
+    // За выбранный день запись есть — показываем её. Нет — переносим несохранённое набранное,
+    // а если на прошлом дне была уже сохранённая запись, начинаем с чистой формы.
+    S.drafts.diary = S.diary[k] ? diaryFromEntry(k) : S.diary[dr.day] ? emptyDiary(k) : { ...dr, day: k };
+    saveDraftsSoon(); return render();
+  }
+  if (b.dataset.em || b.dataset.dsk) {
+    const dr = diaryDraft(), key = b.dataset.em ? "em" : "sk", v = b.dataset.em || b.dataset.dsk;
+    dr[key] = dr[key].includes(v) ? dr[key].filter(x => x !== v) : [...dr[key], v];
+    saveDraftsSoon();
+    const on = dr[key].includes(v);
+    b.classList.toggle("on", on); b.setAttribute("aria-pressed", on);
+    return;
+  }
+  if (b.id === "save-diary") {
+    const dr = diaryDraft();
+    if (!dr.em.length && !dr.sk.length && !dr.note.trim()) { toast("Отметьте эмоции, навыки или напишите заметку"); return; }
+    const week = weekOfDay(dr.day);
+    const entry = { day: dr.day, week, em: [...dr.em], power: dr.power, sk: [...dr.sk], note: dr.note.trim(), saved: now().toISOString() };
+    try { await commit("diary", d => { d[entry.day] = entry; return d; }); }
+    catch (err) { return saveFailed(err); }
+    S.drafts.diary = null; saveDraftsSoon();
+    // Навыки из записи сами отмечаются в таблице навыков на этой неделе
+    if (entry.sk.length) {
+      try { await commit("grid", g => { entry.sk.forEach(n => { const a = g[n] || []; if (!a.includes(week)) g[n] = [...a, week].sort((x, y) => x - y); }); return g; }); }
+      catch (err) { console.error(err); }
+    }
+    // Галочка «дневник» — когда за неделю набралось нужное число дней
+    if (!marksOf(week).diary && diaryDaysInWeek(week) >= DIARY_DAYS_FOR_MARK) {
+      try { await commit("marks", m => { m[week] = { ...(m[week] || {}), diary: true }; return m; }); }
+      catch (err) { console.error(err); }
+    }
+    render(); toast("Запись сохранена на этом телефоне");
+    return;
+  }
+
   if (b.dataset.sess) {
     const n = +b.dataset.sess;
     openSess.has(n) ? openSess.delete(n) : openSess.add(n);
@@ -357,6 +458,8 @@ document.addEventListener("input", e => {
   if (id === "sit" || id === "did" || id === "fnote") {
     form()[id === "fnote" ? "note" : id] = el.value; saveDraftsSoon(); return;
   }
+  if (id === "dnote") { diaryDraft().note = el.value; saveDraftsSoon(); return; }
+  if (id === "power") { diaryDraft().power = +el.value; $("#power-v").textContent = el.value; saveDraftsSoon(); return; }
   if (id === "before" || id === "after") {
     form()[id] = +el.value; $("#" + id + "-v").textContent = el.value; saveDraftsSoon();
   }

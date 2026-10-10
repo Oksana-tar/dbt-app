@@ -79,6 +79,38 @@ textarea{width:100%;min-height:80px;border:1px solid var(--line);border-radius:1
 .entry:first-of-type{border-top:0}
 .row{display:flex;gap:8px;flex-wrap:wrap}
 .row .btn{flex:1}
+/* Навыки: переключатель, таблица, шпаргалка */
+.seg{display:grid;grid-template-columns:1fr 1fr;background:var(--card);border-radius:12px;padding:4px;gap:4px}
+.seg button{border:0;background:transparent;color:var(--muted);font:inherit;font-weight:500;padding:10px;border-radius:9px;cursor:pointer;min-height:44px}
+.seg button[aria-selected="true"]{background:var(--accent);color:#fff}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .seg button[aria-selected="true"]{color:#0F1A1C}}
+.stat{display:flex;gap:12px}
+.stat div{flex:1;background:var(--bg);border-radius:12px;padding:10px}
+.stat b{font-family:var(--display);font-size:1.3rem;display:block}
+.skill{display:flex;flex-direction:column;gap:6px}
+.skill h2{color:var(--accent)}
+.skill ul{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:4px}
+.skill li b{font-family:var(--display);font-weight:600;color:var(--done);margin-right:6px}
+.tabs-filter{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;margin-inline:-16px;padding-inline:16px;scrollbar-width:none}
+.tabs-filter .chip{white-space:nowrap}
+.grid-wrap{overflow-x:auto;background:var(--card);border-radius:16px;padding-block:8px;-webkit-overflow-scrolling:touch}
+.grid{border-collapse:separate;border-spacing:3px;font-size:.8rem;width:max-content}
+.grid th,.grid td{padding:0;border:0;text-align:center}
+.grid th.sk{position:sticky;left:0;background:var(--card);z-index:1;text-align:left;width:122px;min-width:122px;padding-inline:8px 4px}
+.grid .sk button{background:none;border:0;font:inherit;color:var(--ink);text-align:left;cursor:pointer;padding:2px 0;line-height:1.2;width:100%}
+.grid .sk button.sel{color:var(--accent);font-weight:600}
+.grid .sk small{color:var(--muted);display:block;font-size:.7rem;font-variant-numeric:tabular-nums}
+.grid th.wk{font-size:.7rem;color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums;width:28px;height:24px}
+.grid th.wk.cur{color:#fff;background:var(--accent);border-radius:6px}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .grid th.wk.cur{color:#0F1A1C}}
+.grid .modrow th{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);padding-top:12px;padding-bottom:2px}
+.cell{width:28px;height:28px;border-radius:7px;border:1px solid var(--line);background:transparent;padding:0;cursor:pointer;display:block}
+.cell.pre{background:var(--bg);border-color:var(--bg)}
+.cell.on{background:var(--done);border-color:var(--done)}
+td.cur .cell:not(.on){border-color:var(--accent)}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:.8rem;color:var(--muted)}
+.legend span{display:flex;align-items:center;gap:6px}
+.legend i{width:14px;height:14px;border-radius:4px;border:1px solid var(--line);display:inline-block}
 nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);z-index:10}
 nav .in{max-width:480px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr)}
 nav button{background:none;border:0;font:inherit;font-size:.72rem;color:var(--muted);padding:10px 2px 12px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer}

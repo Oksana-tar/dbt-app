@@ -298,6 +298,83 @@ function viewDiary() {
     </div>`).join("") : `<p class="muted">Пока нет записей. Первая появится здесь после сохранения.</p>`}</section>`;
 }
 
+// ---------- Навыки ----------
+let skillsMode = "grid", gridSel = null, skillFilter = null, gridScrolled = false;
+const GRID_ROWS = D.skillsGrid.flatMap(g => g.rows);
+
+function viewSkills() {
+  return `${storageAlert()}<h1>Навыки</h1>
+  <div class="seg" role="tablist" aria-label="Вид">
+    <button role="tab" data-smode="grid" aria-selected="${skillsMode === "grid"}">Моя таблица</button>
+    <button role="tab" data-smode="list" aria-selected="${skillsMode === "list"}">Список навыков</button>
+  </div>
+  ${skillsMode === "grid" ? gridBody() : listBody()}`;
+}
+
+function gridBody() {
+  const weeksOf = n => S.grid[n] || [];
+  const used = GRID_ROWS.filter(r => weeksOf(r.n).length).length;
+  const weeks = new Set(GRID_ROWS.flatMap(r => weeksOf(r.n))).size;
+  const W = Array.from({ length: TOTAL }, (_, i) => i + 1);
+  const sel = gridSel && GRID_ROWS.find(r => r.n === gridSel);
+  const selWeeks = sel ? [...weeksOf(sel.n)].sort((a, b) => a - b) : [];
+  return `
+  <p class="muted">Нажмите на клетку, если применяли навык на этой неделе. Нажмите на название, чтобы прочитать, что значит навык.</p>
+  <section class="card"><div class="stat">
+    <div><b>${used} из ${GRID_ROWS.length}</b><span class="muted">навыков уже применял</span></div>
+    <div><b>${weeks} из ${TOTAL}</b><span class="muted">недель с практикой</span></div>
+  </div></section>
+  ${sel ? `<section class="card skill" id="skill-card">
+    <span class="eyebrow">Вводится на сессии ${sel.s}</span>
+    <h2>${esc(sel.n)}</h2><p>${esc(sel.d)}</p>
+    <p class="muted">Применял недель: <b>${selWeeks.length}</b>${selWeeks.length ? ` (${selWeeks.join(", ")})` : ""}</p>
+    <button class="chip" data-gskill="${esc(sel.n)}" style="align-self:flex-start">Закрыть</button>
+  </section>` : ""}
+  <div class="grid-wrap"><table class="grid">
+    <thead><tr><th class="sk"><span class="muted">Неделя</span></th>${W.map(w => `<th class="wk ${w === CURRENT ? "cur" : ""}" scope="col">${w}</th>`).join("")}</tr></thead>
+    <tbody>${D.skillsGrid.map(g => `<tr class="modrow"><th class="sk" scope="rowgroup">${esc(g.mod)}</th><td colspan="${TOTAL}"></td></tr>` + g.rows.map(r => {
+      const on = weeksOf(r.n);
+      return `<tr><th class="sk" scope="row"><button data-gskill="${esc(r.n)}" class="${gridSel === r.n ? "sel" : ""}">${esc(r.n)}<small>${on.length} нед.</small></button></th>${W.map(w =>
+        `<td class="${w === CURRENT ? "cur" : ""}"><button class="cell ${on.includes(w) ? "on" : w < r.s ? "pre" : ""}" data-cell="${esc(r.n)}|${w}" aria-pressed="${on.includes(w)}" aria-label="${esc(r.n)}, неделя ${w}"></button></td>`).join("")}</tr>`;
+    }).join("")).join("")}</tbody>
+  </table></div>
+  <div class="legend">
+    <span><i style="background:var(--done);border-color:var(--done)"></i>применял</span>
+    <span><i></i>не применял</span>
+    <span><i style="background:var(--bg);border-color:var(--bg)"></i>навык ещё не проходили</span>
+    <span><i style="border-color:var(--accent)"></i>текущая неделя</span>
+  </div>
+  ${privacy("Таблица хранится только на этом телефоне. Навыки, отмеченные в дневнике, появляются здесь сами.")}`;
+}
+
+function listBody() {
+  const cur = skillFilter || moduleOf(CURRENT);
+  const m = D.skillsList.find(s => s.mod === cur) || D.skillsList[0];
+  return `
+  <div class="tabs-filter" role="group" aria-label="Модуль">${D.skillsList.map(s => `<button class="chip ${s.mod === m.mod ? "on" : ""}" data-smod="${esc(s.mod)}" aria-pressed="${s.mod === m.mod}">${esc(s.mod)}</button>`).join("")}</div>
+  ${m.items.map(it => `<section class="card skill"><h2>${esc(it.t)}</h2>${it.d ? `<p>${esc(it.d)}</p>` : ""}${it.list ? `<ul>${it.list.map(([a, b]) => `<li>${a ? `<b>${esc(a)}</b>` : "· "}${esc(b)}</li>`).join("")}</ul>` : ""}</section>`).join("")}
+  <p class="muted">Подробно каждый навык ведущий объясняет на встрече.</p>`;
+}
+
+// Таблица листается вбок: сохраняем прокрутку при перерисовке, при первом показе — к текущей неделе
+function renderKeepingGridScroll() {
+  const gw = document.querySelector(".grid-wrap"), x = gw ? gw.scrollLeft : 0, y = window.scrollY;
+  render();
+  const nw = document.querySelector(".grid-wrap");
+  if (nw) nw.scrollLeft = x;
+  window.scrollTo(0, y);
+}
+function scrollGridToCurrent() {
+  // В шпаргалке выбранный модуль должен быть виден в ряду кнопок
+  const chip = document.querySelector(".tabs-filter .chip.on");
+  if (chip) { const f = chip.parentElement; f.scrollLeft = chip.offsetLeft - f.offsetLeft - 16; }
+  const gw = document.querySelector(".grid-wrap");
+  if (!gw || gridScrolled) return;
+  gridScrolled = true;
+  const th = gw.querySelector("th.wk.cur");
+  if (th) gw.scrollLeft = Math.max(0, th.offsetLeft - 122 - 3 * 31);
+}
+
 const soon = (title, text) => `<h1>${title}</h1><section class="card"><p>${text}</p><p class="muted">Этот раздел появится в следующей сборке приложения.</p></section>`;
 const VIEWS = {
   today: viewToday,
@@ -305,7 +382,7 @@ const VIEWS = {
   plan: viewPlan,
   chain: () => soon("Анализ поведенческой цепочки", "Разбор цепочки по восьми шагам."),
   diary: viewDiary,
-  skills: () => soon("Навыки", "Ваша таблица навыков по неделям и шпаргалка с расшифровкой аббревиатур."),
+  skills: viewSkills,
   group: () => soon("Группа", "Раздел для ведущего и координатора: отметки участников, расписание и переносы."),
 };
 const NAV_OF = { practice: "today", chain: "today" };
@@ -322,7 +399,7 @@ function go(r) {
   if (location.hash.slice(1) === r) { render(); window.scrollTo(0, 0); return; }
   location.hash = r;
 }
-window.addEventListener("hashchange", () => { editAns = false; render(); window.scrollTo(0, 0); });
+window.addEventListener("hashchange", () => { editAns = false; gridScrolled = false; render(); window.scrollTo(0, 0); scrollGridToCurrent(); });
 
 // Приложение могло пролежать в фоне несколько дней: пересчитываем текущую сессию
 document.addEventListener("visibilitychange", () => {
@@ -405,6 +482,28 @@ document.addEventListener("click", async e => {
     return;
   }
 
+  // ----- Навыки -----
+  if (b.dataset.smode) { skillsMode = b.dataset.smode; gridScrolled = false; render(); scrollGridToCurrent(); return; }
+  if (b.dataset.smod) {
+    const f = document.querySelector(".tabs-filter"), x = f ? f.scrollLeft : 0;
+    skillFilter = b.dataset.smod; renderKeepingGridScroll();
+    const nf = document.querySelector(".tabs-filter"); if (nf) nf.scrollLeft = x;
+    return;
+  }
+  if (b.dataset.gskill) {
+    gridSel = gridSel === b.dataset.gskill ? null : b.dataset.gskill;
+    renderKeepingGridScroll();
+    const card = $("#skill-card");
+    if (card) card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    return;
+  }
+  if (b.dataset.cell) {
+    const i = b.dataset.cell.lastIndexOf("|"), n = b.dataset.cell.slice(0, i), wk = +b.dataset.cell.slice(i + 1);
+    try { await commit("grid", g => { const a = g[n] || []; g[n] = a.includes(wk) ? a.filter(x => x !== wk) : [...a, wk].sort((x, y) => x - y); return g; }); }
+    catch (err) { return saveFailed(err); }
+    return renderKeepingGridScroll();
+  }
+
   // ----- Дневник -----
   if (b.dataset.dday) {
     const dr = diaryDraft(), k = b.dataset.dday;
@@ -470,6 +569,7 @@ document.addEventListener("input", e => {
   await load();
   if (loaded) DB.persist();
   render();
+  scrollGridToCurrent();
 })();
 
 // ---------- Офлайн и обновления ----------

@@ -163,6 +163,36 @@ function storageAlert() {
     <button class="btn ghost" id="retry-db">Попробовать снова</button></div>`;
 }
 
+// ---------- Включение разбора цепочки ----------
+// Разбор включается сам с сессии chainFrom; на этой неделе он «новый».
+// chainEnabled: true в data.js включает его сразу (оставлено для совместимости).
+const CHAIN_FROM = +D.chainFrom || 0;
+const chainOn = () => !!D.chainEnabled || (CHAIN_FROM > 0 && CURRENT >= CHAIN_FROM);
+const chainIsNew = () => chainOn() && CURRENT === CHAIN_FROM;
+let chainIntro = false; // участника только что привели на экран разбора в первый раз
+
+function chainCard() {
+  if (!chainOn()) return "";
+  return `<section class="card">
+    <span class="eyebrow">${chainIsNew() ? `<span class="badge">Новое · с этой недели</span>` : "Каждую неделю"}</span>
+    <h2>Анализ поведенческой цепочки</h2>
+    <p class="muted">Выберите один случай недели, когда поступили так, как не хотели бы. Разберите его по звеньям и найдите, где можно было разорвать цепочку.</p>
+    <p class="muted">На этой неделе: <b>${(S.chains[CURRENT] || []).length ? "разобрано" : "ещё нет"}</b></p>
+    <button class="btn ${chainIsNew() ? "" : "ghost"}" data-go="chain">Разобрать цепочку</button>
+  </section>`;
+}
+
+// Один раз после включения разбора открываем его экран. Отметка хранится в IndexedDB.
+async function showChainIntroOnce() {
+  if (!chainOn() || !loaded || (S.meta && S.meta.chainIntroSeen)) return;
+  try { await commit("meta", m => { m.chainIntroSeen = now().toISOString(); return m; }); }
+  catch (e) { console.error(e); return; } // не смогли запомнить — не показываем, чтобы не приводить сюда при каждом открытии
+  chainIntro = true;
+  if (route() !== "chain") location.hash = "chain";
+  else render();
+  setTimeout(() => toast("Новое: анализ поведенческой цепочки"), 300);
+}
+
 function viewToday() {
   const s = D.sessions[CURRENT], done = (S.practices[CURRENT] || []).length;
   const mk = marksOf(CURRENT), next = nextMeeting();
@@ -179,6 +209,7 @@ function viewToday() {
     <span class="read">Читаем: Ван Дейк, ${esc(s.read)}</span>
     <div class="bar" role="progressbar" aria-label="Пройдено сессий" aria-valuemin="0" aria-valuemax="${TOTAL}" aria-valuenow="${CURRENT}"><i style="width:${CURRENT / TOTAL * 100}%"></i></div>
   </div>
+  ${chainIsNew() ? chainCard() : ""}
   <section class="card">
     <span class="eyebrow">Вопрос недели</span>
     <p class="quote">${esc(s.q)}</p>
@@ -196,18 +227,12 @@ function viewToday() {
     <p class="muted">Заполнено раз: <b>${done}</b></p>
     <button class="btn ghost" data-go="practice">Заполнить практику</button>
   </section>
-  ${D.chainEnabled ? `<section class="card">
-    <span class="eyebrow">Каждую неделю</span>
-    <h2>Анализ поведенческой цепочки</h2>
-    <p class="muted">Выберите один случай недели, когда поступили так, как не хотели бы. Разберите его по звеньям и найдите, где можно было разорвать цепочку.</p>
-    <p class="muted">На этой неделе: <b>${(S.chains[CURRENT] || []).length ? "разобрано" : "ещё нет"}</b></p>
-    <button class="btn ghost" data-go="chain">Разобрать цепочку</button>
-  </section>` : ""}
+  ${chainIsNew() ? "" : chainCard()}
   <section class="card">
     <h2>Мои отметки за неделю</h2>
     ${item("diary", "Заполнял дневник", `хотя бы ${DIARY_DAYS_FOR_MARK} дня из 7 · сейчас ${diaryDaysInWeek(CURRENT)}`)}
     ${item("hw", "Сделал задание недели", s.task.title)}
-    ${D.chainEnabled ? item("chain", "Разобрал цепочку", "анализ поведенческой цепочки") : ""}
+    ${chainOn() ? item("chain", "Разобрал цепочку", "анализ поведенческой цепочки") : ""}
     ${item("read", "Прочитал главу", `Ван Дейк, ${s.read}`)}
     <p class="muted">В этой версии отметки никуда не отправляются. Покажите их ведущему на встрече.</p>
     ${privacy("Ведущий увидит только эти галочки. Ответы, практики и дневник остаются на вашем телефоне.")}
@@ -337,6 +362,10 @@ function viewChain() {
   ${storageAlert()}
   <span class="eyebrow">Неделя ${CURRENT}</span>
   <h1>Анализ поведенческой цепочки</h1>
+  ${chainIntro ? `<div class="alert" role="status" style="color:var(--ink);background:var(--done-soft)">
+    <b>Новое: анализ поведенческой цепочки</b>
+    <span>${chainIsNew() ? "С этой недели раз" : "Раз"} в неделю выбирайте один случай, когда поступили так, как не хотели бы, и разбирайте его по шагам ниже. Карточка разбора теперь есть на экране «Сегодня».</span>
+  </div>` : ""}
   ${privacy("Разбор остаётся только на этом телефоне. Ведущий увидит лишь отметку, что вы его сделали. Подробно обсудить можно с ведущим лично.")}
   ${ta("ch-beh", "1. Что я сделал и хочу изменить?", "Опишите конкретно, как на видео: что вы сделали или сказали")}
   ${ta("ch-event", "2. Что запустило цепочку?", "Событие снаружи: что произошло прямо перед этим")}
@@ -580,7 +609,12 @@ function viewGroup() {
   </section>
   <section class="card">
     <h2>Разбор цепочки</h2>
-    <p class="muted">${D.chainEnabled ? "<b>Включён:</b> участники видят карточку разбора и четвёртую галочку." : "<b>Выключен.</b> Когда объясните анализ цепочки на группе, напишите разработчику, и его включат для всех участников."}</p>
+    <p class="muted">${chainOn()
+      ? `<b>Включён${CHAIN_FROM && !D.chainEnabled ? ` с сессии ${CHAIN_FROM}` : ""}:</b> участники видят карточку разбора и четвёртую галочку.`
+      : CHAIN_FROM
+        ? `<b>Включится сам на сессии ${CHAIN_FROM}</b>, ${longDate(sessDate(CHAIN_FROM))}. В эту неделю участники при первом открытии приложения попадут на экран разбора, а карточка будет первой на «Сегодня» с пометкой «Новое».`
+        : "<b>Выключен.</b>"}</p>
+    <p class="muted">Если объяснение разбора переносится на другую сессию, напишите разработчику, и номер сессии поменяют для всех.</p>
   </section>
   <section class="card">
     <h2>Все сессии</h2>
@@ -620,13 +654,13 @@ function go(r) {
   if (location.hash.slice(1) === r) { render(); window.scrollTo(0, 0); return; }
   location.hash = r;
 }
-window.addEventListener("hashchange", () => { editAns = false; gridScrolled = false; render(); window.scrollTo(0, 0); scrollGridToCurrent(); });
+window.addEventListener("hashchange", () => { editAns = false; if (route() !== "chain") chainIntro = false; gridScrolled = false; render(); window.scrollTo(0, 0); scrollGridToCurrent(); });
 
 // Приложение могло пролежать в фоне несколько дней: пересчитываем текущую сессию
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;
   const c = calcCurrent();
-  if (c !== CURRENT) { CURRENT = c; editAns = false; render(); }
+  if (c !== CURRENT) { CURRENT = c; editAns = false; render(); showChainIntroOnce(); }
 });
 
 // ---------- Действия ----------
@@ -874,6 +908,7 @@ document.addEventListener("input", e => {
   if (loaded) DB.persist();
   render();
   scrollGridToCurrent();
+  showChainIntroOnce();
 })();
 
 // ---------- Офлайн и обновления ----------

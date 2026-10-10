@@ -200,6 +200,7 @@ function viewToday() {
     <span class="eyebrow">Каждую неделю</span>
     <h2>Анализ поведенческой цепочки</h2>
     <p class="muted">Выберите один случай недели, когда поступили так, как не хотели бы. Разберите его по звеньям и найдите, где можно было разорвать цепочку.</p>
+    <p class="muted">На этой неделе: <b>${(S.chains[CURRENT] || []).length ? "разобрано" : "ещё нет"}</b></p>
     <button class="btn ghost" data-go="chain">Разобрать цепочку</button>
   </section>` : ""}
   <section class="card">
@@ -297,6 +298,75 @@ function viewDiary() {
       ${e.sk.length ? `<span class="muted">Навыки: ${esc(e.sk.join(", "))}</span>` : ""}
       ${e.note ? `<span style="white-space:pre-wrap">${esc(e.note)}</span>` : ""}
     </div>`).join("") : `<p class="muted">Пока нет записей. Первая появится здесь после сохранения.</p>`}</section>`;
+}
+
+// ---------- Анализ поведенческой цепочки ----------
+const emptyChain = () => ({ beh: "", event: "", vuln: [], vnote: "", links: [{ type: D.linkTypes[0], text: "" }], shortC: "", longC: "", skills: [], snote: "", repair: "", prevent: "" });
+const chainDraft = () => (S.drafts.chain = S.drafts.chain || emptyChain());
+// Поля формы: id textarea → поле черновика
+const CHAIN_FIELDS = { "ch-beh": "beh", "ch-event": "event", "ch-vnote": "vnote", "ch-short": "shortC", "ch-long": "longC", "ch-snote": "snote", "ch-repair": "repair", "ch-prevent": "prevent" };
+
+function chainPicture(c) {
+  const L = (cls, lbl, t) => t ? `<div class="link ${cls}"><small>${lbl}</small>${esc(t)}</div>` : "";
+  return `<div class="chain">
+    ${L("vuln", "Уязвимость", [...c.vuln, c.vnote.trim()].filter(Boolean).join(", "))}
+    ${L("", "Событие", c.event.trim())}
+    ${c.links.filter(l => l.text.trim()).map(l => L("", esc(l.type), l.text.trim())).join("")}
+    ${L("beh", "Поведение", c.beh.trim())}
+    ${L("vuln", "Последствия", [c.shortC.trim() && "сразу: " + c.shortC.trim(), c.longC.trim() && "потом: " + c.longC.trim()].filter(Boolean).join(" · "))}
+  </div>`;
+}
+const chainHasContent = c => !!(c.beh.trim() || c.event.trim() || c.vuln.length || c.vnote.trim() || c.links.some(l => l.text.trim()) || c.shortC.trim() || c.longC.trim());
+function updateChainPreview() {
+  const box = $("#chain-preview");
+  if (!box) return;
+  const c = chainDraft();
+  box.hidden = !chainHasContent(c);
+  box.querySelector(".chain-body").innerHTML = chainPicture(c);
+}
+
+function viewChain() {
+  const cd = chainDraft();
+  const ta = (id, label, ph) => `<section class="card"><label for="${id}">${label}</label><textarea id="${id}" placeholder="${ph}">${esc(cd[CHAIN_FIELDS[id]])}</textarea></section>`;
+  const chips = (arr, sel, attr) => arr.map(x => `<button class="chip ${sel.includes(x) ? "on" : ""}" data-${attr}="${esc(x)}" aria-pressed="${sel.includes(x)}">${esc(x)}</button>`).join("");
+  // Навыки, которые группа уже прошла
+  const skillNames = GRID_ROWS.filter(r => r.s <= CURRENT).map(r => r.n);
+  const weeks = Object.keys(S.chains).map(Number).sort((a, b) => b - a);
+  return `<button class="chip" data-go="today" style="align-self:flex-start">← Назад</button>
+  ${storageAlert()}
+  <span class="eyebrow">Неделя ${CURRENT}</span>
+  <h1>Анализ поведенческой цепочки</h1>
+  ${privacy("Разбор остаётся только на этом телефоне. Ведущий увидит лишь отметку, что вы его сделали. Подробно обсудить можно с ведущим лично.")}
+  ${ta("ch-beh", "1. Что я сделал и хочу изменить?", "Опишите конкретно, как на видео: что вы сделали или сказали")}
+  ${ta("ch-event", "2. Что запустило цепочку?", "Событие снаружи: что произошло прямо перед этим")}
+  <section class="card"><label>3. Что сделало меня уязвимее?</label>
+    <div class="chips">${chips(D.vulnerabilities, cd.vuln, "vuln")}</div>
+    <textarea id="ch-vnote" placeholder="Что-то ещё">${esc(cd.vnote)}</textarea></section>
+  <section class="card"><label>4. Звенья цепочки</label>
+    <p class="muted">Шаг за шагом от события до поведения: мысли, чувства, ощущения в теле, действия.</p>
+    ${cd.links.map((l, i) => `<div class="lrow"><span class="lnum">Звено ${i + 1}</span>
+      <div class="chips" role="group" aria-label="Тип звена ${i + 1}">${D.linkTypes.map(t => `<button class="chip ${l.type === t ? "on" : ""}" data-ltype="${i}|${esc(t)}" aria-pressed="${l.type === t}">${esc(t)}</button>`).join("")}</div>
+      <textarea data-ltext="${i}" rows="2" aria-label="Звено ${i + 1}" placeholder="Что было на этом шаге">${esc(l.text)}</textarea>
+      ${cd.links.length > 1 ? `<button class="chip" data-lrm="${i}" style="align-self:flex-start">Убрать звено</button>` : ""}</div>`).join("")}
+    <button class="btn ghost" id="add-link">Добавить звено</button></section>
+  <section class="card"><label for="ch-short">5. Последствия</label>
+    <textarea id="ch-short" placeholder="Сразу: что я получил или почувствовал">${esc(cd.shortC)}</textarea>
+    <textarea id="ch-long" aria-label="Последствия потом" placeholder="Потом: для меня и для других">${esc(cd.longC)}</textarea></section>
+  <section class="card"><label>6. Где можно было разорвать цепочку и каким навыком?</label>
+    <div class="chips">${chips(skillNames, cd.skills, "chsk")}</div>
+    <textarea id="ch-snote" placeholder="На каком звене и что можно было сделать иначе">${esc(cd.snote)}</textarea></section>
+  ${ta("ch-repair", "7. Как исправить последствия?", "Что я сделаю, чтобы исправить вред")}
+  ${ta("ch-prevent", "8. Как предотвратить в следующий раз?", "Как снизить уязвимость или подготовиться к такой ситуации")}
+  <section class="card" id="chain-preview" ${chainHasContent(cd) ? "" : "hidden"}><h2>Ваша цепочка сейчас</h2><div class="chain-body">${chainPicture(cd)}</div></section>
+  <button class="btn" id="save-chain">Сохранить разбор</button>
+  <section class="card"><h2>Мои разборы</h2>${weeks.length ? weeks.flatMap(w => (S.chains[w] || []).map(c => `<div class="entry">
+      <span class="eyebrow">Неделя ${w} · ${esc(shortDate(new Date(c.date)))}</span>
+      ${chainPicture(c)}
+      ${c.skills.length ? `<span class="muted">Можно было: ${esc(c.skills.join(", "))}</span>` : ""}
+      ${c.snote ? `<span class="muted">${esc(c.snote)}</span>` : ""}
+      ${c.repair ? `<span class="muted">Исправить: ${esc(c.repair)}</span>` : ""}
+      ${c.prevent ? `<span class="muted">В следующий раз: ${esc(c.prevent)}</span>` : ""}
+    </div>`)).join("") : `<p class="muted">Пока нет разборов.</p>`}</section>`;
 }
 
 // ---------- Копия записей ----------
@@ -480,7 +550,7 @@ const VIEWS = {
   today: viewToday,
   practice: viewPractice,
   plan: viewPlan,
-  chain: () => soon("Анализ поведенческой цепочки", "Разбор цепочки по восьми шагам."),
+  chain: viewChain,
   diary: viewDiary,
   skills: viewSkills,
   group: () => soon("Группа", "Раздел для ведущего и координатора: отметки участников, расписание и переносы."),
@@ -582,6 +652,57 @@ document.addEventListener("click", async e => {
     return;
   }
 
+  // ----- Анализ цепочки -----
+  if (b.dataset.vuln || b.dataset.chsk) {
+    const cd = chainDraft(), key = b.dataset.vuln ? "vuln" : "skills", v = b.dataset.vuln || b.dataset.chsk;
+    cd[key] = cd[key].includes(v) ? cd[key].filter(x => x !== v) : [...cd[key], v];
+    saveDraftsSoon();
+    const on = cd[key].includes(v);
+    b.classList.toggle("on", on); b.setAttribute("aria-pressed", on);
+    updateChainPreview();
+    return;
+  }
+  if (b.dataset.ltype) {
+    const i = b.dataset.ltype.indexOf("|"), n = +b.dataset.ltype.slice(0, i), t = b.dataset.ltype.slice(i + 1);
+    chainDraft().links[n].type = t; saveDraftsSoon();
+    b.parentElement.querySelectorAll("[data-ltype]").forEach(x => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-pressed", on); });
+    updateChainPreview();
+    return;
+  }
+  if (b.dataset.lrm) {
+    chainDraft().links.splice(+b.dataset.lrm, 1); saveDraftsSoon();
+    const y = window.scrollY; render(); window.scrollTo(0, y);
+    return;
+  }
+  if (b.id === "add-link") {
+    chainDraft().links.push({ type: D.linkTypes[0], text: "" }); saveDraftsSoon();
+    const y = window.scrollY; render(); window.scrollTo(0, y);
+    const t = document.querySelectorAll("[data-ltext]"); if (t.length) t[t.length - 1].focus();
+    return;
+  }
+  if (b.id === "save-chain") {
+    const cd = chainDraft();
+    if (!cd.beh.trim() || !cd.event.trim()) {
+      toast("Заполните хотя бы первые два пункта");
+      $(cd.beh.trim() ? "#ch-event" : "#ch-beh").focus(); return;
+    }
+    const week = CURRENT;
+    const entry = { ...clone(cd), id: Date.now(), date: now().toISOString(), links: cd.links.filter(l => l.text.trim()).map(l => ({ type: l.type, text: l.text.trim() })) };
+    Object.values(CHAIN_FIELDS).forEach(f => { entry[f] = entry[f].trim(); });
+    try { await commit("chains", c => { (c[week] = c[week] || []).unshift(entry); return c; }); }
+    catch (err) { return saveFailed(err); }
+    S.drafts.chain = null; saveDraftsSoon();
+    // Галочка «разобрал цепочку» ставится сама
+    if (!marksOf(week).chain) {
+      try { await commit("marks", m => { m[week] = { ...(m[week] || {}), chain: true }; return m; }); }
+      catch (err) { console.error(err); }
+    }
+    render(); toast("Разбор сохранён на этом телефоне");
+    const h = [...document.querySelectorAll("h2")].find(x => x.textContent === "Мои разборы");
+    if (h) h.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+
   // ----- Копия записей -----
   if (b.id === "backup-save") {
     try { if (await saveBackup()) { render(); toast("Копия сохранена в файл"); } }
@@ -668,6 +789,11 @@ document.addEventListener("input", e => {
   if (id === "ans") { S.drafts.ans[CURRENT] = el.value; saveDraftsSoon(); return; }
   if (id === "sit" || id === "did" || id === "fnote") {
     form()[id === "fnote" ? "note" : id] = el.value; saveDraftsSoon(); return;
+  }
+  if (CHAIN_FIELDS[id]) { chainDraft()[CHAIN_FIELDS[id]] = el.value; saveDraftsSoon(); updateChainPreview(); return; }
+  if (el.dataset && el.dataset.ltext !== undefined) {
+    const l = chainDraft().links[+el.dataset.ltext]; if (l) l.text = el.value;
+    saveDraftsSoon(); updateChainPreview(); return;
   }
   if (id === "dnote") { diaryDraft().note = el.value; saveDraftsSoon(); return; }
   if (id === "power") { diaryDraft().power = +el.value; $("#power-v").textContent = el.value; saveDraftsSoon(); return; }

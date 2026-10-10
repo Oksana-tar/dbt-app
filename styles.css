@@ -23,6 +23,7 @@
   --warn:#F0A99C; --warn-soft:#3B2420; color-scheme:dark}
 
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{height:100%}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.5;-webkit-tap-highlight-color:transparent}
@@ -111,6 +112,17 @@ td.cur .cell:not(.on){border-color:var(--accent)}
 .legend{display:flex;flex-wrap:wrap;gap:12px;font-size:.8rem;color:var(--muted)}
 .legend span{display:flex;align-items:center;gap:6px}
 .legend i{width:14px;height:14px;border-radius:4px;border:1px solid var(--line);display:inline-block}
+/* Анализ цепочки */
+.chain{display:flex;flex-direction:column;margin-left:6px}
+.link{position:relative;padding:4px 0 10px 20px;border-left:2px solid var(--line);white-space:pre-wrap}
+.link:last-child{border-left-color:transparent}
+.link::before{content:"";position:absolute;left:-7px;top:7px;width:12px;height:12px;border-radius:50%;background:var(--accent)}
+.link.vuln::before{background:var(--muted)}
+.link.beh::before{background:var(--done)}
+.link small{display:block;font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;white-space:normal}
+.lrow{display:flex;flex-direction:column;gap:8px;padding:12px;border:1px solid var(--line);border-radius:12px}
+.lrow .chip{font-size:.85rem;padding:7px 12px}
+.lnum{font-family:var(--display);font-size:.8rem;color:var(--accent)}
 nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);z-index:10}
 nav .in{max-width:480px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr)}
 nav button{background:none;border:0;font:inherit;font-size:.72rem;color:var(--muted);padding:10px 2px 12px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer}

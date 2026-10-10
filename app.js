@@ -65,7 +65,7 @@ const moduleOf = n => (D.modules.find(m => n >= m.from && n <= m.to) || {}).name
 
 // ---------- Состояние ----------
 // diary: { "2026-10-10": запись }, grid: { "навык": [недели] }
-const EMPTY = () => ({ answers: {}, practices: {}, marks: {}, diary: {}, grid: {}, drafts: { ans: {}, form: {}, diary: null } });
+const EMPTY = () => ({ answers: {}, practices: {}, marks: {}, diary: {}, grid: {}, chains: {}, meta: {}, drafts: { ans: {}, form: {}, diary: null } });
 let S = EMPTY();
 let loaded = false, storageError = null;
 let CURRENT = calcCurrent();
@@ -211,6 +211,7 @@ function viewToday() {
     <p class="muted">В этой версии отметки никуда не отправляются. Покажите их ведущему на встрече.</p>
     ${privacy("Ведущий увидит только эти галочки. Ответы, практики и дневник остаются на вашем телефоне.")}
   </section>
+  ${backupCard()}
   ${TEST_NOW ? `<p class="muted">Проверочный режим: сегодня считается ${shortDate(TEST_NOW)} ${TEST_NOW.getFullYear()}.</p>` : ""}`;
 }
 
@@ -296,6 +297,105 @@ function viewDiary() {
       ${e.sk.length ? `<span class="muted">Навыки: ${esc(e.sk.join(", "))}</span>` : ""}
       ${e.note ? `<span style="white-space:pre-wrap">${esc(e.note)}</span>` : ""}
     </div>`).join("") : `<p class="muted">Пока нет записей. Первая появится здесь после сохранения.</p>`}</section>`;
+}
+
+// ---------- Копия записей ----------
+// Личные разделы, которые попадают в копию. Черновики не берём: это недописанное.
+const BACKUP_KEYS = ["answers", "practices", "marks", "diary", "grid", "chains"];
+const BACKUP_APP = "dbt-training";
+
+function backupCard() {
+  const last = S.meta && S.meta.lastBackup ? new Date(S.meta.lastBackup) : null;
+  const days = last ? Math.floor((now() - last) / 864e5) : null;
+  const hasData = BACKUP_KEYS.some(k => S[k] && Object.keys(S[k]).length);
+  const stale = hasData && (days === null || days >= 14);
+  return `<section class="card">
+    <h2>Копия записей</h2>
+    <p class="muted">Записи хранятся только на этом телефоне. Сохраните копию в файл, чтобы не потерять их при смене или потере телефона. Из файла записи можно загрузить на новый телефон.</p>
+    <p class="muted">Последняя копия: <b>${last ? `${shortDate(last)} ${last.getFullYear()}` : "ещё не сохраняли"}</b></p>
+    ${stale ? `<div class="alert"><span>${last ? "С последней копии прошло больше двух недель." : "Копии ещё нет."} Сохраните её, это займёт минуту.</span></div>` : ""}
+    <button class="btn ghost" id="backup-save">Сохранить копию</button>
+    <button class="btn ghost" id="backup-load">Загрузить копию</button>
+    <input type="file" id="backup-file" accept=".json,application/json" hidden>
+    ${privacy("Файл копии никуда не отправляется. Храните его там, где его не увидят посторонние: в нём ваш дневник и ответы.")}
+  </section>`;
+}
+
+const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+async function saveBackup() {
+  if (!loaded) { await load(); if (!loaded) throw storageError || new Error("Хранилище недоступно"); }
+  const data = {};
+  BACKUP_KEYS.forEach(k => { if (S[k]) data[k] = S[k]; });
+  const stamp = now();
+  const json = JSON.stringify({ app: BACKUP_APP, format: 1, exportedAt: stamp.toISOString(), data }, null, 1);
+  const name = `dbt-kopiya-${dayKey(stamp)}.json`;
+  const file = new File([json], name, { type: "application/json" });
+  let done = false;
+  // На iPhone надёжнее через «Поделиться» → «Сохранить в Файлы»
+  if (isIOS() && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: "Копия записей DBT" }); done = true; }
+    catch (e) { if (e.name === "AbortError") return false; }
+  }
+  if (!done) {
+    const url = URL.createObjectURL(file), a = document.createElement("a");
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+  await commit("meta", m => { m.lastBackup = stamp.toISOString(); return m; });
+  return true;
+}
+
+// Объединение копии с тем, что уже есть на телефоне. Ничего не стирается.
+function mergeBackup(cur, inc) {
+  const out = clone(cur);
+  // Ответы: на телефоне ответа нет — берём из копии
+  out.answers = { ...(inc.answers || {}), ...(cur.answers || {}) };
+  // Практики и разборы цепочек: объединяем по неделям без повторов
+  for (const k of ["practices", "chains"]) {
+    const res = clone(cur[k] || {});
+    Object.entries(inc[k] || {}).forEach(([w, list]) => {
+      const have = res[w] || [];
+      const ids = new Set(have.map(p => p.id || p.date + (p.sit || p.beh || "")));
+      (list || []).forEach(p => { const id = p.id || p.date + (p.sit || p.beh || ""); if (!ids.has(id)) { have.push(p); ids.add(id); } });
+      res[w] = have.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    });
+    out[k] = res;
+  }
+  // Отметки: галочка стоит, если она есть хоть где-то
+  const marks = clone(cur.marks || {});
+  Object.entries(inc.marks || {}).forEach(([w, m]) => {
+    const r = marks[w] = marks[w] || {};
+    Object.entries(m || {}).forEach(([f, v]) => { if (v) r[f] = true; });
+  });
+  out.marks = marks;
+  // Дневник: на один день — более поздняя по сохранению запись
+  const diary = clone(cur.diary || {});
+  Object.entries(inc.diary || {}).forEach(([d, e]) => {
+    if (!diary[d] || String(e.saved || "") > String(diary[d].saved || "")) diary[d] = e;
+  });
+  out.diary = diary;
+  // Таблица навыков: объединяем недели
+  const grid = clone(cur.grid || {});
+  Object.entries(inc.grid || {}).forEach(([n, ws]) => {
+    grid[n] = [...new Set([...(grid[n] || []), ...(ws || [])])].sort((a, b) => a - b);
+  });
+  out.grid = grid;
+  return out;
+}
+
+async function loadBackup(fileObj) {
+  let parsed;
+  try { parsed = JSON.parse(await fileObj.text()); } catch (e) { toast("Это не файл копии. Выберите файл dbt-kopiya-….json"); return; }
+  if (!parsed || parsed.app !== BACKUP_APP || !parsed.data) { toast("Это не файл копии этого приложения"); return; }
+  const when = parsed.exportedAt ? new Date(parsed.exportedAt) : null;
+  const ok = confirm(`Загрузить записи из копии${when ? ` от ${shortDate(when)} ${when.getFullYear()}` : ""}?\n\nОни добавятся к записям на этом телефоне. Ничего не удалится.`);
+  if (!ok) return;
+  if (!loaded) { await load(); if (!loaded) { saveFailed(storageError || new Error("Хранилище недоступно")); return; } }
+  const merged = mergeBackup(Object.fromEntries(BACKUP_KEYS.map(k => [k, S[k] || {}])), parsed.data);
+  try { for (const k of BACKUP_KEYS) await commit(k, () => merged[k]); }
+  catch (err) { return saveFailed(err); }
+  render(); toast("Записи из копии загружены");
 }
 
 // ---------- Навыки ----------
@@ -482,6 +582,14 @@ document.addEventListener("click", async e => {
     return;
   }
 
+  // ----- Копия записей -----
+  if (b.id === "backup-save") {
+    try { if (await saveBackup()) { render(); toast("Копия сохранена в файл"); } }
+    catch (err) { saveFailed(err); }
+    return;
+  }
+  if (b.id === "backup-load") { const f = $("#backup-file"); f.value = ""; f.click(); return; }
+
   // ----- Навыки -----
   if (b.dataset.smode) { skillsMode = b.dataset.smode; gridScrolled = false; render(); scrollGridToCurrent(); return; }
   if (b.dataset.smod) {
@@ -549,6 +657,10 @@ document.addEventListener("click", async e => {
     b.classList.toggle("open", openSess.has(n)); b.setAttribute("aria-expanded", openSess.has(n));
     return;
   }
+});
+
+document.addEventListener("change", e => {
+  if (e.target.id === "backup-file" && e.target.files && e.target.files[0]) loadBackup(e.target.files[0]);
 });
 
 document.addEventListener("input", e => {

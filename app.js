@@ -293,7 +293,7 @@ function viewPlan() {
           </span>
         </span></button>`;
     }
-    return `<section class="module"><span class="eyebrow">${esc(m.name)} · сессии ${m.from}–${m.to}</span>${rows}</section>`;
+    return `<section class="module"><span class="eyebrow">${esc(m.name)} · ${m.from === m.to ? `сессия ${m.from}` : `сессии ${m.from}–${m.to}`}</span>${rows}</section>`;
   }).join("");
 }
 
